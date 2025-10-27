@@ -1,14 +1,14 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: AI Text & Plagiarism Detector
-  version: "1.5.0"
+  version: "1.6.0"
 servers:
   - url: https://ai-detection-1-197w.onrender.com
 paths:
   /analyze:
     post:
       operationId: analyzeText
-      summary: Analyze text and return JSON summary plus color-highlighted HTML
+      summary: Analyze text and return JSON summary and sentence-level labels
       requestBody:
         required: true
         content:
@@ -31,19 +31,23 @@ paths:
                   summary:
                     type: object
                     properties:
-                      ai_score:
-                        type: integer
-                      plagiarism_score:
-                        type: integer
-                      human_score:
-                        type: integer
-                  highlighted_html:
-                    type: string
-                    description: Safe HTML snippet to render with innerHTML
+                      ai_score: { type: integer }
+                      plagiarism_score: { type: integer }
+                      human_score: { type: integer }
+                  sentences:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index:   { type: integer }
+                        text:    { type: string }
+                        label:   { type: string, enum: [ai, plag, human] }
+                        score:   { type: number, nullable: true }
+                        source:  { type: string, nullable: true }
   /preview:
     post:
       operationId: previewHtml
-      summary: Returns a complete HTML page with embedded summary chips and highlighted text
+      summary: Return a simple HTML preview for website testing (not for ChatGPT display)
       requestBody:
         required: true
         content:
@@ -61,4 +65,5 @@ paths:
             text/html:
               schema:
                 type: string
-components: {}
+components:
+  schemas: {}
