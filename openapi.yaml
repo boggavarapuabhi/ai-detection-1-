@@ -1,20 +1,14 @@
-openapi: 3.1.0
+openapi: 3.0.3
 info:
   title: AI Text & Plagiarism Detector
-  version: "1.4.0"
+  version: "1.5.0"
 servers:
   - url: https://ai-detection-1-197w.onrender.com
 paths:
-  /healthz:
-    get:
-      operationId: healthCheck
-      summary: Check if API is running
-      responses:
-        "200": { description: OK }
   /analyze:
     post:
       operationId: analyzeText
-      summary: Analyze text; returns summary, spans, readable Markdown, and an iframe-based HTML preview
+      summary: Analyze text and return JSON summary plus color-highlighted HTML
       requestBody:
         required: true
         content:
@@ -23,47 +17,33 @@ paths:
               type: object
               required: [text]
               properties:
-                text: { type: string }
-                ai_threshold: { type: number, default: 0.65 }
-                return_html: { type: boolean, default: true }
-                plagiarism: { type: boolean, default: true }
-                show_only_flagged: { type: boolean, default: false }
-                show_score_badges: { type: boolean, default: true }
+                text:
+                  type: string
+                  description: Plain text to analyze
       responses:
         "200":
-          description: OK
+          description: Analysis done
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  summary: { type: object }
-                  spans:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        index: { type: integer }
-                        start: { type: integer }
-                        end: { type: integer }
-                        text: { type: string }
-                        ai_score: { type: number }
-                        ai_label: { type: string }
-                        ai_flag: { type: boolean }
-                        plagiarism_hits:
-                          type: array
-                          items:
-                            type: object
-                            properties:
-                              url: { type: string }
-                              title: { type: string }
-                              similarity: { type: number }
-                  html_preview: { type: string, description: "iframe-based HTML preview" }
-                  markdown_summary: { type: string, description: "Always-readable Markdown summary with per-sentence labels" }
-  /report:
+                  summary:
+                    type: object
+                    properties:
+                      ai_score:
+                        type: integer
+                      plagiarism_score:
+                        type: integer
+                      human_score:
+                        type: integer
+                  highlighted_html:
+                    type: string
+                    description: Safe HTML snippet to render with innerHTML
+  /preview:
     post:
-      operationId: downloadReport
-      summary: Generate and return a PDF report
+      operationId: previewHtml
+      summary: Returns a complete HTML page with embedded summary chips and highlighted text
       requestBody:
         required: true
         content:
@@ -72,15 +52,13 @@ paths:
               type: object
               required: [text]
               properties:
-                text: { type: string }
-                ai_threshold: { type: number, default: 0.65 }
-                plagiarism: { type: boolean, default: true }
-                show_only_flagged: { type: boolean, default: false }
+                text:
+                  type: string
       responses:
         "200":
-          description: PDF file
+          description: HTML page
           content:
-            application/pdf:
+            text/html:
               schema:
                 type: string
-                format: binary
+components: {}
