@@ -1,14 +1,14 @@
 openapi: 3.1.0
 info:
   title: AI Text & Plagiarism Detector
-  version: "1.6.0"
+  version: "1.7.0"
 servers:
   - url: https://ai-detection-1-197w.onrender.com
 paths:
   /analyze:
     post:
       operationId: analyzeText
-      summary: Analyze text and return JSON summary and sentence-level labels
+      summary: Analyze text; return JSON summary and sentence-level labels with optional plagiarism sources
       requestBody:
         required: true
         content:
@@ -19,7 +19,19 @@ paths:
               properties:
                 text:
                   type: string
-                  description: Plain text to analyze
+                source_texts:
+                  type: array
+                  items: { type: string }
+                  description: Optional reference texts to check against
+                source_urls:
+                  type: array
+                  items: { type: string }
+                  description: Optional URLs to fetch and compare against
+                plag_threshold:
+                  type: integer
+                  default: 85
+                  minimum: 50
+                  maximum: 100
       responses:
         "200":
           description: Analysis done
@@ -39,25 +51,23 @@ paths:
                     items:
                       type: object
                       properties:
-                        index:   { type: integer }
-                        text:    { type: string }
-                        label:   { type: string, enum: [ai, plag, human] }
-                        score:   { type: number, nullable: true }
-                        source:  { type: string, nullable: true }
+                        index: { type: integer }
+                        text: { type: string }
+                        label: { type: string, enum: [ai, plag, human] }
+                        ai_like: { type: boolean, nullable: true }
+                        plag_score: { type: integer, nullable: true }
+                        source: { type: string, nullable: true }
+                        source_snippet: { type: string, nullable: true }
   /preview:
     post:
       operationId: previewHtml
-      summary: Return a simple HTML preview for website testing (not for ChatGPT display)
+      summary: HTML preview for website UI (not for ChatGPT)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [text]
-              properties:
-                text:
-                  type: string
+              $ref: '#/components/schemas/AnalyzeRequestLike'
       responses:
         "200":
           description: HTML page
@@ -66,4 +76,20 @@ paths:
               schema:
                 type: string
 components:
-  schemas: {}
+  schemas:
+    AnalyzeRequestLike:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+        source_texts:
+          type: array
+          items: { type: string }
+        source_urls:
+          type: array
+          items: { type: string }
+        plag_threshold:
+          type: integer
+          default: 85
+          minimum: 50
+          maximum: 100
