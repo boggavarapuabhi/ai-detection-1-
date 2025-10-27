@@ -1,0 +1,80 @@
+openapi: 3.0.1
+info:
+  title: AI Text & Plagiarism Detector
+  version: "1.0.0"
+servers:
+  - url: https://ai-detection-1-197w.onrender.com
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      summary: Check if API is running
+      responses:
+        "200":
+          description: OK
+  /analyze:
+    post:
+      operationId: analyzeText
+      summary: Analyze text for AI-like style & possible plagiarism and return HTML highlights
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  description: Full text to analyze
+                ai_threshold:
+                  type: number
+                  default: 0.65
+                  description: Flag spans with AI score ≥ threshold
+                return_html:
+                  type: boolean
+                  default: true
+                  description: Include an HTML preview with highlights
+                plagiarism:
+                  type: boolean
+                  default: true
+                  description: Needs BING_SEARCH_KEY env var to be set on Render
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary:
+                    type: object
+                    properties:
+                      avg_ai_score: { type: number }
+                      ai_flagged_spans: { type: integer }
+                      plagiarism_spans: { type: integer }
+                      total_spans: { type: integer }
+                      engine: { type: string }
+                      plagiarism_engine: { type: string }
+                  spans:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        start: { type: integer }
+                        end: { type: integer }
+                        text: { type: string }
+                        ai_score: { type: number }
+                        ai_flag: { type: boolean }
+                        plagiarism_hits:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              url: { type: string }
+                              title: { type: string }
+                              similarity: { type: number }
+                              evidence: { type: string }
+                  html_preview:
+                    type: string
+                    description: HTML snippet with highlighted spans
