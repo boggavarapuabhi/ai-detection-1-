@@ -1,22 +1,21 @@
 import re
-from typing import List, Dict
+from typing import List, Dict, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
 
-app = FastAPI(title="AI Text & Plagiarism Detector", version="1.5.0")
+app = FastAPI(title="AI Text & Plagiarism Detector", version="1.6.0")
 
-# CORS so your web UI or GPT Action can consume this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten to your domains later
+    allow_origins=["*"],    # tighten later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ---------- simple text utils ----------
+# -------- text utils --------
 _SENTENCE_RE = re.compile(r'(?us)([^.!?]+[.!?])')
 
 def split_sentences(text: str) -> List[str]:
@@ -24,74 +23,33 @@ def split_sentences(text: str) -> List[str]:
     return [p.strip() for p in parts if p.strip()]
 
 def score_ai(text: str) -> int:
-    # placeholder. plug your real logic here.
+    # placeholder; plug your real model
     length = len(text.split())
     return max(0, min(100, 20 + length // 20))
 
 def score_plagiarism(text: str) -> int:
-    # placeholder. plug your real logic here.
-    # treat repeated sentences as "plag-like" just to demo colors
+    # placeholder; plug your rapidfuzz logic
     sents = split_sentences(text)
     repeated = len(sents) - len(set(sents))
     return max(0, min(100, repeated * 10))
 
-def build_highlighted_html(sentences: List[str], ai_mask: List[bool], plag_mask: List[bool]) -> str:
-    from html import escape as _esc
-
-    colored = []
-    for i, s in enumerate(sentences):
-        cls = "sent human"
-        if plag_mask[i]:
-            cls = "sent plag"
-        elif ai_mask[i]:
-            cls = "sent ai"
-        colored.append(f'<span class="{cls}" data-index="{i}">{_esc(s)}</span>')
-
-    body = " ".join(colored)
-
-    styles = """
-    <style>
-      .report { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; line-height:1.6 }
-      .summary { display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap }
-      .chip{padding:6px 10px;border-radius:999px;border:1px solid rgba(0,0,0,.08);font-size:13px}
-      .sent { padding:2px 3px; border-radius:4px }
-      .sent.ai   { background: rgba(255, 87, 87, .25); }     /* red for AI-likely */
-      .sent.plag { background: rgba(255, 193, 7, .35); }     /* amber for plag */
-      .sent.human{ background: rgba(76, 175, 80, .18); }     /* green for human */
-    </style>
-    """
-
-    header = """
-    <div class="summary">
-      <span class="chip" id="ai_chip"></span>
-      <span class="chip" id="plag_chip"></span>
-      <span class="chip" id="human_chip"></span>
-    </div>
-    """
-
-    script = """
-    <script>
-      if (typeof window !== 'undefined' && window.__summary__) {
-        const {ai, plag, human} = window.__summary__;
-        document.getElementById('ai_chip').textContent = `AI-generated: ${ai}%`;
-        document.getElementById('plag_chip').textContent = `Plagiarism: ${plag}%`;
-        document.getElementById('human_chip').textContent = `Human: ${human}%`;
-      }
-    </script>
-    """
-
-    return f'{styles}<div class="report">{header}<div class="body">{body}</div>{script}</div>'
-
-# ---------- request/response shapes ----------
+# -------- models --------
 class AnalyzeRequest(BaseModel):
     text: str
 
-class AnalyzeResponse(BaseModel):
-    summary: Dict[str, int]
-    highlighted_html: str
+class SentenceOut(BaseModel):
+    index: int
+    text: str
+    label: str             # "ai" | "plag" | "human"
+    score: Optional[float] = None  # optional per-sentence score
+    source: Optional[str] = None   # optional URL or match id
 
-# ---------- main endpoints ----------
-@app.post("/analyze", response_model=AnalyzeResponse)
+class AnalyzeJSON(BaseModel):
+    summary: Dict[str, int]
+    sentences: List[SentenceOut]
+
+# -------- API that ChatGPT will call (JSON only, no HTML) --------
+@app.post("/analyze", response_model=AnalyzeJSON)
 def analyze(req: AnalyzeRequest):
     text = req.text.strip()
     sentences = split_sentences(text)
@@ -100,18 +58,21 @@ def analyze(req: AnalyzeRequest):
     plag_score = score_plagiarism(text)
     human_score = max(0, 100 - max(ai_score, plag_score))
 
-    # demo masks: long sentences count as AI-like, duplicates as plag-like
-    ai_mask = [len(s.split()) >= 18 for s in sentences]
+    # demo labeling: long = AI-like, duplicate = plag
     seen = set()
-    plag_mask = []
-    for s in sentences:
-        if s in seen:
-            plag_mask.append(True)
-        else:
-            plag_mask.append(False)
-            seen.add(s)
+    out: List[SentenceOut] = []
+    for i, s in enumerate(sentences):
+        is_plag = s in seen
+        seen.add(s)
+        is_ai = (len(s.split()) >= 18)
 
-    html_block = build_highlighted_html(sentences, ai_mask, plag_mask)
+        label = "human"
+        if is_plag:
+            label = "plag"
+        elif is_ai:
+            label = "ai"
+
+        out.append(SentenceOut(index=i, text=s, label=label))
 
     payload = {
         "summary": {
@@ -119,21 +80,34 @@ def analyze(req: AnalyzeRequest):
             "plagiarism_score": plag_score,
             "human_score": human_score
         },
-        "highlighted_html": html_block
+        "sentences": [o.dict() for o in out]
     }
     return JSONResponse(content=payload)
 
-# optional quick preview as a full HTML page
+# -------- Optional: pretty HTML for YOUR WEBSITE ONLY --------
+def _build_highlighted_html(sentences: List[str], labels: List[str]) -> str:
+    from html import escape as _esc
+    color_map = {"ai": "rgba(255,87,87,.25)", "plag": "rgba(255,193,7,.35)", "human": "rgba(76,175,80,.18)"}
+    spans = []
+    for i, s in enumerate(sentences):
+        lab = labels[i]
+        spans.append(f'<span style="background:{color_map[lab]};padding:2px 3px;border-radius:4px" data-index="{i}">{_esc(s)}</span>')
+    body = " ".join(spans)
+    return f"<div style='font-family:ui-sans-serif,system-ui;-webkit-font-smoothing:antialiased;line-height:1.6'>{body}</div>"
+
 @app.post("/preview", response_class=HTMLResponse)
 def preview(req: AnalyzeRequest):
-    data = analyze(req).body.decode("utf-8")
-    import json
-    obj = json.loads(data)
-    html = f"""
-      <html><head><meta charset="utf-8"><title>Detector Preview</title></head>
-      <body>
-        <script>window.__summary__={{ai:{obj['summary']['ai_score']},plag:{obj['summary']['plagiarism_score']},human:{obj['summary']['human_score']}}}</script>
-        {obj['highlighted_html']}
-      </body></html>
-    """
+    text = req.text.strip()
+    sentences = split_sentences(text)
+    labels = []
+    seen = set()
+    for s in sentences:
+        lab = "human"
+        if s in seen:
+            lab = "plag"
+        elif len(s.split()) >= 18:
+            lab = "ai"
+        labels.append(lab)
+        seen.add(s)
+    html = _build_highlighted_html(sentences, labels)
     return HTMLResponse(content=html)
