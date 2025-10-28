@@ -1,14 +1,14 @@
 openapi: 3.1.0
 info:
   title: AI Text & Plagiarism Detector
-  version: "1.7.0"
+  version: "1.10.0"
 servers:
   - url: https://ai-detection-1-197w.onrender.com
 paths:
   /analyze:
     post:
       operationId: analyzeText
-      summary: Analyze text; return JSON summary and sentence-level labels with optional plagiarism sources
+      summary: Analyze text; return JSON summary, counts, labels, and a Markdown report
       requestBody:
         required: true
         content:
@@ -17,21 +17,10 @@ paths:
               type: object
               required: [text]
               properties:
-                text:
-                  type: string
-                source_texts:
-                  type: array
-                  items: { type: string }
-                  description: Optional reference texts to check against
-                source_urls:
-                  type: array
-                  items: { type: string }
-                  description: Optional URLs to fetch and compare against
-                plag_threshold:
-                  type: integer
-                  default: 85
-                  minimum: 50
-                  maximum: 100
+                text: { type: string }
+                source_texts: { type: array, items: { type: string } }
+                source_urls:  { type: array, items: { type: string } }
+                plag_threshold: { type: integer, default: 85, minimum: 50, maximum: 100 }
       responses:
         "200":
           description: Analysis done
@@ -46,6 +35,13 @@ paths:
                       ai_score: { type: integer }
                       plagiarism_score: { type: integer }
                       human_score: { type: integer }
+                  counts:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      ai: { type: integer }
+                      plag: { type: integer }
+                      human: { type: integer }
                   sentences:
                     type: array
                     items:
@@ -54,14 +50,20 @@ paths:
                         index: { type: integer }
                         text: { type: string }
                         label: { type: string, enum: [ai, plag, human] }
+                        confidence: { type: string, enum: [Low, Medium, High] }
                         ai_like: { type: boolean, nullable: true }
                         plag_score: { type: integer, nullable: true }
                         source: { type: string, nullable: true }
                         source_snippet: { type: string, nullable: true }
+                        reason: { type: string, nullable: true }
+                        suggestion: { type: string, nullable: true }
+                  markdown_report:
+                    type: string
+                    description: Chat-friendly Markdown report
   /preview:
     post:
       operationId: previewHtml
-      summary: HTML preview for website UI (not for ChatGPT)
+      summary: HTML preview for website UI (not for ChatGPT display)
       requestBody:
         required: true
         content:
@@ -75,6 +77,96 @@ paths:
             text/html:
               schema:
                 type: string
+  /rewrite:
+    post:
+      operationId: rewriteSentence
+      summary: Rewrite a single sentence in a chosen style
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sentence]
+              properties:
+                sentence: { type: string }
+                style: { type: string, enum: [humanize, concise, formal, simple], default: humanize }
+      responses:
+        "200":
+          description: Rewritten sentence
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  original: { type: string }
+                  style: { type: string }
+                  rewritten: { type: string }
+                  tips: { type: string }
+  /rewrite-batch:
+    post:
+      operationId: rewriteBatch
+      summary: Rewrite an entire document and return stitched drafts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+                style: { type: string, enum: [humanize, concise, formal, simple], default: humanize }
+                style_map:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Per-label style, keys in {ai, plag, human}
+                target_labels:
+                  type: array
+                  items: { type: string, enum: [ai, plag, human] }
+                  default: [ai, plag]
+                plag_threshold: { type: integer, default: 85, minimum: 50, maximum: 100 }
+                source_texts: { type: array, items: { type: string } }
+                source_urls:  { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: Rewritten drafts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  replaced_count: { type: integer }
+                  originals: { type: array, items: { type: object } }
+                  rewrites:  { type: array, items: { type: object } }
+                  rewritten_text_flagged_only: { type: string }
+                  rewritten_text_all: { type: string }
+  /report.pdf:
+    post:
+      operationId: generatePdfReport
+      summary: Generate and download a PDF report of the analysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+                source_texts: { type: array, items: { type: string } }
+                source_urls:  { type: array, items: { type: string } }
+                plag_threshold: { type: integer, default: 85, minimum: 50, maximum: 100 }
+                filename: { type: string, default: detector_report.pdf }
+      responses:
+        "200":
+          description: PDF file
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
 components:
   schemas:
     AnalyzeRequestLike:
@@ -82,14 +174,6 @@ components:
       required: [text]
       properties:
         text: { type: string }
-        source_texts:
-          type: array
-          items: { type: string }
-        source_urls:
-          type: array
-          items: { type: string }
-        plag_threshold:
-          type: integer
-          default: 85
-          minimum: 50
-          maximum: 100
+        source_texts: { type: array, items: { type: string } }
+        source_urls:  { type: array, items: { type: string } }
+        plag_threshold: { type: integer, default: 85, minimum: 50, maximum: 100 }
